@@ -1,0 +1,261 @@
+---
+title: "Case 31: Summary of Data Analysis"
+subtitle: "R1, R2, R5, and R6 | Employees Federal Credit Union"
+author: "Xueying Luo"
+date: 2026-11-11
+format:
+  revealjs:
+    theme: simple
+    slide-number: true
+    transition: fade
+    center: false
+    smaller: true
+    embed-resources: true
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+library(tidyverse)
+library(haven)
+library(knitr)
+
+dat <- read_sav("outputs/XL_Case31_cleaned.sav") |>
+  rename_with(tolower) |>
+  mutate(across(where(is.numeric), as.numeric))
+
+frequency_table <- function(x, labels) {
+  tibble(score = seq_along(labels), Response = labels) |>
+    left_join(tibble(score = x) |> count(score, name = "N"), by = "score") |>
+    mutate(N = replace_na(N, 0L), `Percent (%)` = round(100 * N / sum(N), 1)) |>
+    select(Response, N, `Percent (%)`)
+}
+
+test_summary <- function(x, midpoint = 3) {
+  x <- x[!is.na(x)]
+  result <- t.test(x, mu = midpoint)
+  tibble(`Valid N` = length(x), Mean = round(mean(x), 2),
+         SD = round(sd(x), 2), `Test value` = midpoint,
+         t = round(unname(result$statistic), 2),
+         df = unname(result$parameter),
+         p = format.pval(result$p.value, digits = 3, eps = .001))
+}
+
+rate_labels <- c("Very low", "Low", "Average", "High", "Very high")
+r1_rates <- frequency_table(dat$q7r, rate_labels)
+r2_rates <- frequency_table(dat$q8r, rate_labels)
+r2_comparison <- frequency_table(
+  dat$q30, c("Strongly disagree", "Disagree", "Uncertain", "Agree", "Strongly agree")
+)
+
+services <- tibble(
+  question = paste0("q", 13:26, "r"),
+  Service = c("Regular share accounts", "Special subaccounts", "Christmas club accounts",
+              "Individual retirement accounts", "MasterCard credit cards", "Signature loans",
+              "New car loans", "Late-model car loans", "Older-model car loans",
+              "Household goods/appliance loans", "Recreational loans",
+              "Share-collateralized loans", "IRA loans", "Line-of-credit loans")
+)
+
+service_results <- dat |>
+  select(all_of(services$question)) |>
+  pivot_longer(everything(), names_to = "question", values_to = "response") |>
+  group_by(question) |>
+  summarise(
+    N = sum(!is.na(response)),
+    unaware = sum(response == 1, na.rm = TRUE),
+    aware_unused = sum(response == 2, na.rm = TRUE),
+    used = sum(response == 3, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  right_join(services, by = "question") |>
+  mutate(
+    `Unaware (%)` = round(100 * unaware / N, 1),
+    `Aware, unused (%)` = round(100 * aware_unused / N, 1),
+    `Used (%)` = round(100 * used / N, 1),
+    `Total aware (%)` = round(100 * (aware_unused + used) / N, 1)
+  ) |>
+  arrange(match(question, services$question))
+
+statement_frequency <- tibble(
+  score = 1:5,
+  Response = c("Too often", "Very often", "About right", "Not often enough", "Never")
+) |>
+  left_join(tibble(score = dat$q9) |> count(score, name = "N"), by = "score") |>
+  mutate(N = replace_na(N, 0L), `Percent (%)` = round(100 * N / sum(N), 1)) |>
+  select(Response, N, `Percent (%)`)
+
+yes_no_table <- function(x, question) {
+  x <- x[!is.na(x) & x %in% c(1, 2)]
+  counts <- table(factor(x, levels = c(1, 2)))
+  test <- chisq.test(counts, p = c(.5, .5))
+  tibble(Question = question, `Yes (n)` = unname(counts[1]),
+         `No (n)` = unname(counts[2]), `Valid N` = length(x),
+         `Yes (%)` = round(100 * counts[1] / length(x), 1),
+         `Chi-square` = round(unname(test$statistic), 2),
+         p = format.pval(test$p.value, digits = 3, eps = .001))
+}
+
+yes_no_results <- bind_rows(
+  yes_no_table(dat$q11, "Q11: Statements easy to understand"),
+  yes_no_table(dat$q12, "Q12: Information kept confidential")
+)
+
+operations <- tibble(
+  question = c("q31", "q32", "q33", "q34", "q37r"),
+  Measure = c("Financial confidentiality", "Prompt loan processing",
+              "Services meet members' needs", "Easy loan applications", "Overall management")
+)
+operations_results <- map_dfr(seq_len(nrow(operations)), function(i) {
+  bind_cols(operations[i, "Measure"], test_summary(dat[[operations$question[i]]]))
+})
+```
+
+## About the survey
+
+Employees Federal Credit Union (EFCU) surveyed members to find out how they viewed its services and operations, including why they might borrow from other institutions.
+
+- This analysis uses `r nrow(dat)` responses from the cleaned Module 10 dataset.
+- The results cover R1, R2, R5, and R6.
+- "No opinion" and "No answer" responses are excluded from the relevant calculations.
+
+## R1 — Savings-rate opinions (descriptive statistics)
+
+R1 asks why people joined EFCU. The available data only show how members rated its savings rates (Q7r).
+
+```{r}
+#| label: tbl-r1-rates
+#| tbl-cap: "Savings-rate ratings (Q7r)"
+kable(r1_rates)
+```
+
+70.3% chose "average" (83 of 118 valid responses).
+
+## R1 — One-sample t-test
+
+```{r}
+#| label: tbl-r1-test
+#| tbl-cap: "Savings-rate rating compared with 3"
+kable(test_summary(dat$q7r))
+```
+
+The average rating was 3.07 out of 5, which was not significantly different from 3 (*t*(117) = 1.30, *p* = .196). Members did not rate the savings rates particularly high or low. Since Q2 is not in the dataset, we cannot tell whether savings rates were a reason they joined.
+
+## R2 — Borrowing-rate opinions (Q8r)
+
+```{r}
+#| label: tbl-r2-rates
+#| tbl-cap: "Members' ratings of EFCU borrowing rates (Q8r)"
+kable(r2_rates)
+```
+
+```{r}
+#| label: tbl-r2-test
+#| tbl-cap: "Borrowing-rate rating compared with 3"
+kable(test_summary(dat$q8r))
+```
+
+Most members rated the borrowing rates as average (55.1%). The mean was 3.14, slightly above 3 but not statistically significant (*t*(106) = 1.91, *p* = .058). A higher score here means members thought the rates were higher, not better.
+
+## R2 — Are EFCU's rates lower than competitors'?
+
+Q30 asks whether members agree that EFCU's loan rates are lower than those of other institutions.
+
+```{r}
+#| label: tbl-r2-comparison
+#| tbl-cap: "Agreement that EFCU loan rates are lower than competitors' (Q30)"
+kable(r2_comparison)
+```
+
+```{r}
+#| label: tbl-r2-comparison-test
+#| tbl-cap: "One-sample t-test for Q30 (test value = 3)"
+kable(test_summary(dat$q30))
+```
+
+Almost half (46.1%) were uncertain. The average agreement score was 3.06 (*t*(127) = 0.82, *p* = .416), so there is no clear agreement that EFCU offers lower rates. EFCU may need to make its rate comparisons easier to find. Q29 is missing, so these responses do not tell us why members actually borrowed elsewhere.
+
+## R5 — Service awareness (Q13r–Q19r)
+
+For each service, 1 = unaware, 2 = aware but not used, and 3 = aware and used. Total awareness includes categories 2 and 3.
+
+```{r}
+#| label: tbl-r5-accounts
+#| tbl-cap: "Awareness and use of services Q13r–Q19r (percent of valid responses)"
+kable(service_results |>
+        slice(1:7) |>
+        select(Service, `Unaware (%)`, `Aware, unused (%)`, `Used (%)`, `Total aware (%)`))
+```
+
+## R5 — Service awareness (Q20r–Q26r)
+
+```{r}
+#| label: tbl-r5-loans
+#| tbl-cap: "Awareness and use of services Q20r–Q26r (percent of valid responses)"
+kable(service_results |>
+        slice(8:14) |>
+        select(Service, `Unaware (%)`, `Aware, unused (%)`, `Used (%)`, `Total aware (%)`))
+```
+
+## R5 — Comparing service awareness
+
+```{r}
+#| label: fig-r5-awareness
+#| fig-cap: "Share of members aware of each service"
+#| fig-width: 10
+#| fig-height: 5.2
+ggplot(service_results,
+       aes(x = reorder(Service, `Total aware (%)`), y = `Total aware (%)`)) +
+  geom_col(fill = "#3975a8") +
+  coord_flip() +
+  labs(x = NULL, y = "Aware (%)") +
+  theme_minimal(base_size = 12)
+```
+
+Awareness was highest for line-of-credit loans (100%) and lowest for regular share accounts (35.2%). Signature loans were familiar to 96.1% of respondents, but only 14.8% had used them. EFCU could give more attention to services that members are less familiar with.
+
+## R6 — Account statements (Q9 and Q10r)
+
+```{r}
+#| label: tbl-r6-frequency
+#| tbl-cap: "How often members receive account statements (Q9)"
+kable(statement_frequency)
+```
+
+```{r}
+#| label: tbl-r6-accuracy
+#| tbl-cap: "Statement accuracy rating (Q10r; test value = 2.5)"
+kable(test_summary(dat$q10r, 2.5))
+```
+
+77.3% said they received statements about as often as they should. For accuracy, 95.3% rated the statements "good" or "excellent." The average accuracy rating was 3.47 out of 4 (*t*(127) = 17.15, *p* \< .001).
+
+## R6 — Understanding and confidentiality (Q11–Q12)
+
+```{r}
+#| label: tbl-r6-yesno
+#| tbl-cap: "Yes/no responses and chi-square goodness-of-fit tests"
+kable(yes_no_results)
+```
+
+97.7% said their statements were easy to understand. For confidentiality, 69.8% answered "yes" among the 106 valid responses; another 22 people did not give a usable answer. Both yes/no distributions differed from an even 50/50 split (*p* \< .001), although that split is only a comparison point.
+
+## R6 — Ratings of EFCU operations
+
+```{r}
+#| label: tbl-r6-operations
+#| tbl-cap: "Operational ratings and one-sample t-tests (test value = 3)"
+kable(operations_results)
+```
+
+Members rated overall management 4.07 out of 5. They also rated confidentiality (3.95), loan processing (3.72), services meeting their needs (3.59), and loan-application ease (3.46) above the midpoint (all *p* \< .001). Loan-application ease received the lowest of these ratings, and the separate Q12 results suggest that not everyone feels confident about confidentiality.
+
+## Appendix
+
+- GitHub repository
+
+- GitHub Pages

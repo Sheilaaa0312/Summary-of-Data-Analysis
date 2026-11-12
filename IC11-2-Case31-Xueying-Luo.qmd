@@ -254,8 +254,7 @@ kable(operations_results)
 
 Members rated overall management 4.07 out of 5. They also rated confidentiality (3.95), loan processing (3.72), services meeting their needs (3.59), and loan-application ease (3.46) above the midpoint (all *p* \< .001). Loan-application ease received the lowest of these ratings, and the separate Q12 results suggest that not everyone feels confident about confidentiality.
 
-## Appendix
+# Appendix
 
-- GitHub repository
-
-- GitHub Pages
+- [GitHub Repository](https://github.com/Sheilaaa0312/Summary-of-Data-Analysis)
+- [GitHub Pages](https://sheilaaa0312.github.io/Summary-of-Data-Analysis/IC11-2-Case31-Xueying-Luo.html)
